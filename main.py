@@ -2,14 +2,33 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppI
 from telegram.constants import ChatMemberStatus
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
 import logging
+import json
+import os
 
 # 🔐 TOKEN va ADMIN ID
-BOT_TOKEN = "8145474409:AAG_DCe3s3eP8PI2jaJHXZ2CRMVQCZuxwzY"
+BOT_TOKEN = "YOUR_BOT_TOKEN"
 ADMIN_ID = 7114973309
 
-# 📊 Ma'lumotlar
-user_db = set()
-left_users = set()
+# 📁 Fayl nomi
+DATA_FILE = "data.json"
+
+# 📊 Ma'lumotlarni yuklash va saqlash funksiyalari
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return set(data.get("users", [])), set(data.get("left", []))
+    return set(), set()
+
+def save_data():
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump({
+            "users": list(user_db),
+            "left": list(left_users)
+        }, f, ensure_ascii=False, indent=2)
+
+# 📥 Ma'lumotlarni yuklash
+user_db, left_users = load_data()
 required_channels = []
 
 # 🔍 Logging
@@ -19,7 +38,10 @@ logging.basicConfig(level=logging.INFO)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
-    user_db.add(user_id)
+
+    if user_id not in user_db:
+        user_db.add(user_id)
+        save_data()
 
     not_subscribed = []
     for ch in required_channels:
@@ -58,7 +80,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("🔧 Admin menyusi:", reply_markup=keyboard)
 
-# Admin xabar yuborish funksiyasi
+# Admin handler
 async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text.strip()
@@ -68,15 +90,35 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if context.user_data.get("awaiting_broadcast"):
         success, failed = 0, 0
+        message = update.message
+
         for uid in user_db:
             try:
-                await context.bot.send_message(uid, text)
+                if message.text:
+                    await context.bot.send_message(uid, message.text)
+                elif message.photo:
+                    await context.bot.send_photo(uid, photo=message.photo[-1].file_id, caption=message.caption or "")
+                elif message.video:
+                    await context.bot.send_video(uid, video=message.video.file_id, caption=message.caption or "")
+                elif message.audio:
+                    await context.bot.send_audio(uid, audio=message.audio.file_id, caption=message.caption or "")
+                elif message.voice:
+                    await context.bot.send_voice(uid, voice=message.voice.file_id, caption=message.caption or "")
+                elif message.document:
+                    await context.bot.send_document(uid, document=message.document.file_id, caption=message.caption or "")
+                elif message.sticker:
+                    await context.bot.send_sticker(uid, sticker=message.sticker.file_id)
+                else:
+                    failed += 1
+                    continue
                 success += 1
             except:
                 left_users.add(uid)
                 failed += 1
+                save_data()
+
         context.user_data["awaiting_broadcast"] = False
-        await update.message.reply_text(f"📬 Xabar yuborildi:\n✅ Muvaffaqiyatli: {success}\n❌ Xatolik: {failed}")
+        await update.message.reply_text(f"📬 Xabar yuborildi:\n✅ Yuborildi: {success} ta\n❌ Yuborilmadi: {failed} ta")
         return
 
     if text == "➕ Obuna qo‘shish":
@@ -113,7 +155,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "📤 Xabar yuborish":
         context.user_data["awaiting_broadcast"] = True
-        await update.message.reply_text("✉️ Yubormoqchi bo‘lgan xabaringizni kiriting:")
+        await update.message.reply_text("✉️ Yubormoqchi bo‘lgan xabaringizni (matn, media, stiker...) kiriting:")
         return
 
     if context.user_data.get("adding_channel"):
@@ -163,14 +205,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # RUN
 if __name__ == "__main__":
-    from telegram.ext import Application
     import asyncio
 
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
-    app.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_text))
+    app.add_handler(MessageHandler(filters.TEXT | filters.ALL & filters.User(ADMIN_ID), handle_admin_text))
     app.add_handler(CallbackQueryHandler(handle_callback))
 
     print("🤖 Bot ishga tushdi!")
