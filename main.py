@@ -52,17 +52,31 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = ReplyKeyboardMarkup([
         ["📊 Statistika", "📋 Ro‘yxat"],
         ["➕ Obuna qo‘shish", "➖ Obunani o‘chirish"],
+        ["📤 Xabar yuborish"],
         ["⬅️ Ortga"]
     ], resize_keyboard=True)
 
     await update.message.reply_text("🔧 Admin menyusi:", reply_markup=keyboard)
 
-# Admin text handler
+# Admin xabar yuborish funksiyasi
 async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text.strip()
 
     if user.id != ADMIN_ID:
+        return
+
+    if context.user_data.get("awaiting_broadcast"):
+        success, failed = 0, 0
+        for uid in user_db:
+            try:
+                await context.bot.send_message(uid, text)
+                success += 1
+            except:
+                left_users.add(uid)
+                failed += 1
+        context.user_data["awaiting_broadcast"] = False
+        await update.message.reply_text(f"📬 Xabar yuborildi:\n✅ Muvaffaqiyatli: {success}\n❌ Xatolik: {failed}")
         return
 
     if text == "➕ Obuna qo‘shish":
@@ -88,11 +102,18 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text == "📊 Statistika":
-        await update.message.reply_text(f"👥 Umumiy foydalanuvchilar: {len(user_db)}\n🚪 Botdan chiqqanlar: {len(left_users)}")
+        await update.message.reply_text(
+            f"👥 Umumiy foydalanuvchilar: {len(user_db)}\n🚪 Botdan chiqqanlar: {len(left_users)}"
+        )
         return
 
     if text == "⬅️ Ortga":
         await start(update, context)
+        return
+
+    if text == "📤 Xabar yuborish":
+        context.user_data["awaiting_broadcast"] = True
+        await update.message.reply_text("✉️ Yubormoqchi bo‘lgan xabaringizni kiriting:")
         return
 
     if context.user_data.get("adding_channel"):
@@ -154,5 +175,4 @@ if __name__ == "__main__":
 
     print("🤖 Bot ishga tushdi!")
 
-    # ⚠️ Faqat bitta event loop ishlat:
     asyncio.get_event_loop().run_until_complete(app.run_polling())
