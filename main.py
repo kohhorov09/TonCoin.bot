@@ -17,19 +17,25 @@ def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return set(data.get("users", [])), set(data.get("left", []))
-    return set(), set()
+            return (
+                set(data.get("users", [])),
+                set(data.get("left", [])),
+                set(data.get("admins", [ADMIN_ID])),
+                data.get("channels", [])
+            )
+    return set(), set(), {ADMIN_ID}, []
 
 def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump({
             "users": list(user_db),
-            "left": list(left_users)
+            "left": list(left_users),
+            "admins": list(ADMINS),
+            "channels": required_channels
         }, f, ensure_ascii=False, indent=2)
 
 # 📥 Ma'lumotlarni yuklash
-user_db, left_users = load_data()
-required_channels = []
+user_db, left_users, ADMINS, required_channels = load_data()
 
 # 🔍 Logging
 logging.basicConfig(level=logging.INFO)
@@ -53,39 +59,36 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             not_subscribed.append(ch)
 
     if not_subscribed:
-        buttons = [
-            [InlineKeyboardButton(f"📢 {ch}", url=f"https://t.me/{ch.lstrip('@')}")]
-            for ch in required_channels
-        ]
+        buttons = [[InlineKeyboardButton(f"📢 {ch}", url=f"https://t.me/{ch.lstrip('@')}")] for ch in not_subscribed]
         buttons.append([InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs")])
         reply_markup = InlineKeyboardMarkup(buttons)
-        await update.message.reply_text("❗ O‘yinni boshlashdan oldin quyidagi kanallarga obuna bo‘ling:", reply_markup=reply_markup)
+        await update.message.reply_text("‼️ O‘yinni boshlashdan oldin quyidagi kanallarga obuna bo‘ling:", reply_markup=reply_markup)
         return
 
-    game_button = InlineKeyboardButton("🎮 Join Game", web_app=WebAppInfo(url="https://coin-ton.vercel.app/"))
+    game_button = InlineKeyboardButton("🎮 Join Game", web_app=WebAppInfo(url="https://coin-ton-6pu6.vercel.app/"))
     await update.message.reply_text("✅ Obuna tasdiqlandi. O‘yinni boshlang!", reply_markup=InlineKeyboardMarkup([[game_button]]))
 
 # /admin komandasi
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("⛔ Bu bo‘lim faqat admin uchun.")
+    if update.effective_user.id not in ADMINS:
+        await update.message.reply_text("⛔ Bu bo‘lim faqat adminlar uchun.")
         return
 
     keyboard = ReplyKeyboardMarkup([
         ["📊 Statistika", "📋 Ro‘yxat"],
         ["➕ Obuna qo‘shish", "➖ Obunani o‘chirish"],
-        ["📤 Xabar yuborish"],
-        ["⬅️ Ortga"]
+        ["📤 Xabar yuborish", "👤 Admin qo‘shish"],
+        ["🗂 Adminlar", "⬅️ Ortga"]
     ], resize_keyboard=True)
 
-    await update.message.reply_text("🔧 Admin menyusi:", reply_markup=keyboard)
+    await update.message.reply_text("Admin menyusi:", reply_markup=keyboard)
 
-# Admin handler
+# Admin matnli xabarlarni boshqarish
 async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text.strip()
 
-    if user.id != ADMIN_ID:
+    if user.id not in ADMINS:
         return
 
     if context.user_data.get("awaiting_broadcast"):
@@ -115,56 +118,63 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 left_users.add(uid)
                 failed += 1
-                save_data()
 
+        save_data()
         context.user_data["awaiting_broadcast"] = False
-        await update.message.reply_text(f"📬 Xabar yuborildi:\n✅ Yuborildi: {success} ta\n❌ Yuborilmadi: {failed} ta")
-        return
-
-    if text == "➕ Obuna qo‘shish":
-        await update.message.reply_text("📩 Kanal userni yuboring (masalan: @kanal):")
-        context.user_data["adding_channel"] = True
-        return
-
-    if text == "➖ Obunani o‘chirish":
-        if not required_channels:
-            await update.message.reply_text("📭 Hech qanday kanal mavjud emas.")
-            return
-        buttons = [
-            [InlineKeyboardButton(f"❌ {ch}", callback_data=f"remove_{i}")]
-            for i, ch in enumerate(required_channels)
-        ]
-        reply_markup = InlineKeyboardMarkup(buttons)
-        await update.message.reply_text("O‘chirmoqchi bo‘lgan kanalni tanlang:", reply_markup=reply_markup)
-        return
-
-    if text == "📋 Ro‘yxat":
-        msg = "\n".join(required_channels) if required_channels else "📭 Kanal ro‘yxati bo‘sh."
-        await update.message.reply_text(msg)
+        await update.message.reply_text(f"📨 Xabar yuborildi:\n✅ Yuborildi: {success} ta\n❌ Xato: {failed} ta")
         return
 
     if text == "📊 Statistika":
-        await update.message.reply_text(
-            f"👥 Umumiy foydalanuvchilar: {len(user_db)}\n🚪 Botdan chiqqanlar: {len(left_users)}"
-        )
-        return
-
-    if text == "⬅️ Ortga":
-        await start(update, context)
-        return
-
-    if text == "📤 Xabar yuborish":
+        await update.message.reply_text(f"👥 Faol foydalanuvchilar: {len(user_db)}\n🚫 Chiqqanlar: {len(left_users)}")
+    elif text == "📋 Ro‘yxat":
+        msg = "\n".join(required_channels) if required_channels else "📭 Kanal ro'yxati bo'sh."
+        await update.message.reply_text(msg)
+    elif text == "➕ Obuna qo‘shish":
+        context.user_data["adding_channel"] = True
+        await update.message.reply_text("🔗 Kanal userini yuboring (masalan: @kanal):")
+    elif text == "➖ Obunani o‘chirish":
+        if not required_channels:
+            await update.message.reply_text("📭 Kanal yo'q.")
+            return
+        buttons = [[InlineKeyboardButton(f"❌ {ch}", callback_data=f"remove_{i}")] for i, ch in enumerate(required_channels)]
+        await update.message.reply_text("O'chirmoqchi bo'lgan kanalni tanlang:", reply_markup=InlineKeyboardMarkup(buttons))
+    elif text == "📤 Xabar yuborish":
         context.user_data["awaiting_broadcast"] = True
-        await update.message.reply_text("✉️ Yubormoqchi bo‘lgan xabaringizni (matn, media, stiker...) kiriting:")
-        return
-
-    if context.user_data.get("adding_channel"):
+        await update.message.reply_text("✉️ Xabaringizni yuboring (matn, media, stiker...)")
+    elif text == "👤 Admin qo‘shish":
+        if user.id != ADMIN_ID:
+            await update.message.reply_text("⛔ Sizda ruxsat yo‘q.")
+            return
+        context.user_data["adding_admin"] = True
+        await update.message.reply_text("🆔 Yangi admin ID raqamini yuboring:")
+    elif text == "🗂 Adminlar":
+        buttons = [
+            [InlineKeyboardButton(f"👤 {aid}", callback_data=f"select_admin_{aid}")]
+            for aid in ADMINS
+        ]
+        await update.message.reply_text("🧾 Adminlar ro‘yxati:", reply_markup=InlineKeyboardMarkup(buttons))
+    elif text == "⬅️ Ortga":
+        await start(update, context)
+    elif context.user_data.get("adding_channel"):
         if text.startswith("@"):
             required_channels.append(text)
+            save_data()
             await update.message.reply_text(f"✅ Qo‘shildi: {text}")
         else:
-            await update.message.reply_text("❌ Format noto‘g‘ri. @ bilan yozing.")
+            await update.message.reply_text("❌ Noto‘g‘ri format. @ bilan yozing.")
         context.user_data["adding_channel"] = False
+    elif context.user_data.get("adding_admin"):
+        try:
+            new_admin = int(text)
+            if new_admin not in ADMINS:
+                ADMINS.add(new_admin)
+                save_data()
+                await update.message.reply_text(f"✅ Yangi admin qo‘shildi: {new_admin}")
+            else:
+                await update.message.reply_text("✅ Bu foydalanuvchi allaqachon admin.")
+        except:
+            await update.message.reply_text("❌ Noto‘g‘ri ID raqam.")
+        context.user_data["adding_admin"] = False
 
 # Callback handler
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -172,16 +182,36 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     await query.answer()
 
-    if query.data.startswith("remove_") and user_id == ADMIN_ID:
-        index = int(query.data.replace("remove_", ""))
+    if query.data.startswith("remove_") and user_id in ADMINS:
+        index = int(query.data.split("_")[1])
         if 0 <= index < len(required_channels):
             removed = required_channels.pop(index)
+            save_data()
             await query.edit_message_text(f"❌ Kanal o‘chirildi: {removed}")
         else:
-            await query.edit_message_text("🚫 Xatolik yuz berdi.")
-        return
+            await query.edit_message_text("⚠️ Xatolik yuz berdi.")
 
-    if query.data == "check_subs":
+    elif query.data.startswith("select_admin_"):
+        selected_admin = int(query.data.split("_")[2])
+        if user_id != ADMIN_ID:
+            await query.edit_message_text("⛔ Faqat asosiy admin o‘chira oladi.")
+            return
+        if selected_admin == ADMIN_ID:
+            await query.edit_message_text("❗ O‘zingizni o‘chira olmaysiz.")
+            return
+        button = [[InlineKeyboardButton("🗑 O‘chirish", callback_data=f"removeadmin_{selected_admin}")]]
+        await query.edit_message_text(f"🧾 Tanlangan admin ID: {selected_admin}", reply_markup=InlineKeyboardMarkup(button))
+
+    elif query.data.startswith("removeadmin_"):
+        remove_id = int(query.data.split("_")[1])
+        if user_id == ADMIN_ID and remove_id in ADMINS and remove_id != ADMIN_ID:
+            ADMINS.remove(remove_id)
+            save_data()
+            await query.edit_message_text(f"✅ Admin o‘chirildi: {remove_id}")
+        else:
+            await query.edit_message_text("❌ O‘chirish mumkin emas.")
+
+    elif query.data == "check_subs":
         not_subscribed = []
         for ch in required_channels:
             try:
@@ -192,15 +222,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 not_subscribed.append(ch)
 
         if not_subscribed:
-            buttons = [
-                [InlineKeyboardButton(f"📢 {ch}", url=f"https://t.me/{ch.lstrip('@')}")]
-                for ch in not_subscribed
-            ]
+            buttons = [[InlineKeyboardButton(f"📢 {ch}", url=f"https://t.me/{ch.lstrip('@')}")] for ch in not_subscribed]
             buttons.append([InlineKeyboardButton("✅ Qayta tekshirish", callback_data="check_subs")])
-            reply_markup = InlineKeyboardMarkup(buttons)
-            await query.edit_message_text("🚫 Siz hali ham barcha kanallarga obuna bo‘lmagansiz:", reply_markup=reply_markup)
+            await query.edit_message_text("🚫 Siz hali ham barcha kanallarga obuna bo‘lmagansiz:", reply_markup=InlineKeyboardMarkup(buttons))
         else:
-            game_button = InlineKeyboardButton("🎮 Join Game", web_app=WebAppInfo(url="https://coin-ton.vercel.app/"))
+            game_button = InlineKeyboardButton("🎮 Join Game", web_app=WebAppInfo(url="https://coin-ton-6pu6.vercel.app/"))
             await query.edit_message_text("✅ Obuna tekshirildi. O‘yinga kirishingiz mumkin!", reply_markup=InlineKeyboardMarkup([[game_button]]))
 
 # RUN
@@ -211,9 +237,8 @@ if __name__ == "__main__":
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
-    app.add_handler(MessageHandler(filters.TEXT | filters.ALL & filters.User(ADMIN_ID), handle_admin_text))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_admin_text))
     app.add_handler(CallbackQueryHandler(handle_callback))
 
-    print("🤖 Bot ishga tushdi!")
-
-    asyncio.get_event_loop().run_until_complete(app.run_polling())
+    print("Bot ishga tushdi!")
+    asyncio.run(app.run_polling())
