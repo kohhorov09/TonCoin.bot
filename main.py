@@ -6,7 +6,7 @@ import json
 import os
 
 # 🔐 TOKEN va ADMIN ID
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+BOT_TOKEN = "8145474409:AAG_DCe3s3eP8PI2jaJHXZ2CRMVQCZuxwzY"
 ADMIN_ID = 7114973309
 
 # 📁 Fayl nomi
