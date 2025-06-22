@@ -161,15 +161,23 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 
 # 🚀 BOTNI ISHGA TUSHIRISH
+# RUN
 if __name__ == "__main__":
-    app = Application.builder().token(BOT_TOKEN).build()
+    import asyncio
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin))
-    app.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_text))
-    app.add_handler(CallbackQueryHandler(handle_callback))
+    async def main():
+        app = Application.builder().token(BOT_TOKEN).build()
 
-    print("🤖 Bot ishga tushdi!")
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("admin", admin))
+        app.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_text))
+        app.add_handler(CallbackQueryHandler(handle_callback))
+
+        print("🤖 Bot ishga tushdi!")
+        await app.run_polling()
+
+    asyncio.run(main())
+
     app.run_polling()
 
 
