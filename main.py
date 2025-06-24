@@ -5,7 +5,7 @@ import logging
 import json
 import os
 
-BOT_TOKEN = "8145474409:AAG_DCe3s3eP8PI2jaJHXZ2CRMVQCZuxwzY"
+BOT_TOKEN = "7838589688:AAGam0Yj0wz1IErdJPj7LIGwPBGY8Z3C9aA"
 ADMIN_ID = 7114973309
 
 DATA_FILE = "data.json"
